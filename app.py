@@ -1,8 +1,7 @@
-# app.py
+# app.py  (no seaborn required)
 import os, glob, re
 from collections import Counter
 
-import seaborn as sns
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,7 +11,6 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
-import seaborn as sns
 
 # -------- Toggle for model choice --------
 # Fast, lightweight default:
@@ -54,12 +52,8 @@ def normalize_columns(df):
         "timestamp": "created_at",
         "time": "created_at",
     }
-    # Only rename keys that exist
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
-
-    # Minimal required: text
     if "text" not in df.columns:
-        # Try a couple more guesses
         for c in ["content", "message"]:
             if c in df.columns:
                 df = df.rename(columns={c: "text"})
@@ -77,7 +71,6 @@ def parse_dates(df):
 
 def top_terms(series: pd.Series, n=20):
     text = " ".join(series.astype(str)).lower()
-    # keep hashtags and words (min 4 chars to cut noise)
     tokens = re.findall(r"#\w+|\b[a-z]{4,}\b", text)
     stop = {
         "https","http","rt","with","from","this","that","have","about","your","they","them","were",
@@ -92,7 +85,6 @@ def top_terms(series: pd.Series, n=20):
 # =========================
 @st.cache_data
 def load_train_test():
-    # Try common names; fall back to any csv under data/
     train_path = find_file([
         "data/train.csv", "data/Train.csv", "data/Dataset-Train.csv", "data/Dataset - Train.csv"
     ])
@@ -120,7 +112,6 @@ def load_train_test():
 train_df, test_df, train_path, test_path = load_train_test()
 st.caption(f"Loaded: train → {os.path.basename(train_path) if train_path else 'None'} | test → {os.path.basename(test_path) if test_path else 'None'}")
 
-# Ensure minimal columns
 if train_df is not None and "text" not in train_df.columns:
     st.error("Train file must contain a text column (e.g., tweet_text → text).")
     st.stop()
@@ -128,7 +119,6 @@ if test_df is not None and "text" not in test_df.columns:
     st.warning("Test file has no 'text' column after normalization. Test data will be ignored.")
     test_df = None
 
-# Fill brand if exists
 if train_df is not None and "brand" in train_df.columns:
     train_df["brand"] = train_df["brand"].fillna("Unknown")
 if test_df is not None and "brand" in test_df.columns:
@@ -164,7 +154,6 @@ def infer_sentiment_vader(texts):
 def infer_sentiment_hf(texts):
     clf = load_hf_pipeline()
     preds = clf(list(map(str, texts)))
-    # Model labels may be NEGATIVE/NEUTRAL/POSITIVE or LABEL_0/1/2
     label_map = {"NEGATIVE":"Negative","NEUTRAL":"Neutral","POSITIVE":"Positive",
                  "LABEL_0":"Negative","LABEL_1":"Neutral","LABEL_2":"Positive"}
     return [label_map.get(p["label"], p["label"]) for p in preds]
@@ -185,42 +174,37 @@ with tab_eval:
     if train_df is None or "sentiment" not in train_df.columns:
         st.info("No gold sentiment labels found in train data. Validation skipped.")
     else:
-        # Clean labeled rows only
         labeled = train_df.dropna(subset=["text","sentiment"]).copy()
-
-        # Stratified split
         train_split, val_split = train_test_split(
             labeled, test_size=0.2, random_state=42, stratify=labeled["sentiment"]
         )
-
         st.write(f"Train size: {len(train_split)} | Validation size: {len(val_split)}")
 
         with st.spinner("Running pre-trained model on validation split..."):
             val_preds = infer_sentiment(val_split["text"].tolist())
 
-        # Align labels if needed (capitalize etc.)
         y_true = val_split["sentiment"].astype(str).str.title()
         y_pred = pd.Series(val_preds).astype(str).str.title()
 
-        # Metrics
         report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
         st.write("**Classification report**")
         st.dataframe(pd.DataFrame(report).T.round(3))
 
-        # Confusion matrix
         st.write("**Confusion matrix**")
         labels = ["Positive","Neutral","Negative"]
         cm = confusion_matrix(y_true, y_pred, labels=labels)
-        fig_cm = px.imshow(cm, x=labels, y=labels, text_auto=True,
-                           color_continuous_scale="Blues", aspect="auto",
-                           labels=dict(x="Predicted", y="Actual", color="Count"),
-                           title="Confusion Matrix")
+        fig_cm = px.imshow(
+            cm, x=labels, y=labels, text_auto=True,
+            color_continuous_scale="Blues", aspect="auto",
+            labels=dict(x="Predicted", y="Actual", color="Count"),
+            title="Confusion Matrix"
+        )
         st.plotly_chart(fig_cm, use_container_width=True)
 
         st.markdown("""
         **Interpretation tips:**  
-        - If Neutral is often misclassified as Positive/Negative, consider rules like confidence thresholds or human review.  
-        - If Negative recall is low, scan top negative terms to tune thresholds or try the HF model (set `USE_HF=True`).  
+        - If Neutral is often misclassified as Positive/Negative, consider thresholds or human review for edge cases.  
+        - If Negative recall is low, inspect “What people complain about” terms and try USE_HF=True.  
         """)
 
 # ===========================================================
@@ -230,9 +214,6 @@ with tab_dash:
     st.title("Social Media Brand Sentiment Dashboard")
     st.caption("Actionable insights from Twitter-like brand sentiment data (train/test merged).")
 
-    # Prepare train view:
-    # - If train has labels, keep them as-is in 'sentiment'
-    # - If not, infer
     train_view = None
     if train_df is not None:
         train_view = train_df.copy()
@@ -241,9 +222,6 @@ with tab_dash:
                 train_view["sentiment"] = infer_sentiment(train_view["text"].tolist())
         train_view["source"] = "train"
 
-    # Prepare test view:
-    # - If test has labels, use them
-    # - If unlabeled, infer
     test_view = None
     if test_df is not None:
         test_view = test_df.copy()
@@ -252,7 +230,6 @@ with tab_dash:
                 test_view["sentiment"] = infer_sentiment(test_view["text"].tolist())
         test_view["source"] = "test"
 
-    # Merge
     frames = [d for d in [train_view, test_view] if d is not None]
     if not frames:
         st.error("No data available to display.")
@@ -275,7 +252,6 @@ with tab_dash:
     sentiments = sorted(all_df["sentiment"].dropna().astype(str).str.title().unique().tolist())
     sent_sel = st.sidebar.multiselect("Sentiment", sentiments, default=sentiments)
 
-    # Date filter if present
     date_col = "date_only" if "date_only" in all_df.columns else None
     date_range = None
     if date_col and all_df[date_col].notna().any():
@@ -375,7 +351,7 @@ with tab_dash:
     else:
         st.write("No hashtags found in current selection.")
 
-    # Strategy suggestions (simple rules)
+    # Strategy suggestions
     st.subheader("Strategy suggestions")
     suggestions = []
     total = len(f)
@@ -386,7 +362,6 @@ with tab_dash:
             suggestions.append("High negative sentiment detected — review 'What people complain about' terms and address top 3 issues in comms.")
         if pos_rate >= 60:
             suggestions.append("Strong positive sentiment — amplify winning themes and hashtags in upcoming posts.")
-        # Topic-like hints from top terms
         pos_terms = top_terms(f[f["sentiment"].astype(str).str.title()=="Positive"]["text"], n=5)
         neg_terms = top_terms(f[f["sentiment"].astype(str).str.title()=="Negative"]["text"], n=5)
         if len(pos_terms):
@@ -394,7 +369,6 @@ with tab_dash:
         if len(neg_terms):
             suggestions.append(f"Mitigate pain points: {', '.join(neg_terms['term'].tolist())}.")
         if "brand" in f.columns and brand_sel == "All":
-            # Highlight top brand by positive%
             tmp = f.copy()
             tmp["is_pos"] = (tmp["sentiment"].astype(str).str.title()=="Positive").astype(int)
             brand_stats = (tmp.groupby("brand")["is_pos"].mean()*100).sort_values(ascending=False)
