@@ -2,6 +2,7 @@
 import os, glob, re
 from collections import Counter
 
+import seaborn as sns
 import streamlit as st
 import pandas as pd
 import numpy as np
