@@ -245,3 +245,4 @@ else:
         for r in recs: st.markdown(f"- {r}")
     else:
         st.write("No urgent actions. Maintain strategy and monitor weekly.")
+ 
