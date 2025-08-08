@@ -1,6 +1,11 @@
 streamlit
 pandas
+numpy
 plotly
 wordcloud
 matplotlib
-numpy
+scikit-learn
+nltk
+# Optional for transformers model (set USE_HF=True to use it)
+transformers
+torch
